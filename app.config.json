@@ -1,0 +1,36 @@
+{
+  "$schema": "./.dt-app/app.config.schema.json",
+  "environmentUrl": "https://dzc57470.apps.dynatrace.com/",
+  "app": {
+    "name": "Kubernetes 2.0",
+    "version": "0.0.10",
+    "description": "A starting project with routing, fetching data, and charting",
+    "id": "my.kubernetes.v2",
+    "scopes": [
+      {
+        "name": "storage:metrics:read",
+        "comment": "OTel k8s metrics (k8s.*, container.*)"
+      },
+      {
+        "name": "storage:logs:read",
+        "comment": "k8s pod/container logs + k8sobjects events"
+      },
+      {
+        "name": "storage:events:read",
+        "comment": "events table"
+      },
+      {
+        "name": "storage:spans:read",
+        "comment": "services tied to pods/namespaces (service.name on spans)"
+      },
+      {
+        "name": "storage:buckets:read",
+        "comment": "Grail bucket access for DQL"
+      },
+      {
+        "name": "davis-copilot:conversations:execute",
+        "comment": "Explain with AI (Davis CoPilot)"
+      }
+    ]
+  }
+}
