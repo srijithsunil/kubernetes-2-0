@@ -29,6 +29,17 @@ export const FiltersProvider = ({ children }: { children: React.ReactNode }) => 
           const next = { ...prev };
           if (v == null || v === "") delete next[key];
           else next[key] = v;
+          // Cascade: changing a parent invalidates the selections below it,
+          // so dependent dropdowns re-populate from the narrowed set.
+          // cluster → namespace → {workload, pod}
+          if (key === "cluster") {
+            delete next.namespace;
+            delete next.workload;
+            delete next.pod;
+          } else if (key === "namespace") {
+            delete next.workload;
+            delete next.pod;
+          }
           return next;
         }),
       clear: () => setFilters({}),

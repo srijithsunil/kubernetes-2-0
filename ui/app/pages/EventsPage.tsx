@@ -7,6 +7,7 @@ import { FilterBar } from "../components/FilterBar";
 import * as Q from "../queries/k8s";
 import { records, str } from "../lib/series";
 import { useFilters, pick } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 
 type EventRow = {
   id: string;
@@ -19,6 +20,7 @@ type EventRow = {
 
 export const EventsPage = () => {
   const { filters } = useFilters();
+  useTimeframe();
   const f = pick(filters, ["cluster", "namespace"]);
   const { data, error, isLoading } = useDql({ query: Q.k8sEvents(f) });
 

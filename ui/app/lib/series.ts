@@ -7,17 +7,34 @@ export function records(data: unknown): Rec[] {
   return Array.isArray(recs) ? (recs as Rec[]) : [];
 }
 
-/** Last non-null numeric value of a timeseries array (or the number itself). */
+/**
+ * Coerce a Grail scalar to a number. Grail serialises large longs (e.g.
+ * `count()`) and `duration`/`avg(...)` results as JSON *strings*, so a plain
+ * `typeof === "number"` check drops them — accept numeric strings and bigints.
+ */
+function coerceNum(v: unknown): number | null {
+  if (typeof v === "number") return Number.isNaN(v) ? null : v;
+  if (typeof v === "bigint") return Number(v);
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (t === "") return null;
+    const n = Number(t);
+    return Number.isNaN(n) ? null : n;
+  }
+  return null;
+}
+
+/** Last non-null numeric value of a timeseries array (or the scalar itself). */
 export function lastNum(v: unknown): number | null {
   if (Array.isArray(v)) {
     const arr = v as unknown[];
     for (let i = arr.length - 1; i >= 0; i--) {
-      const n = arr[i];
-      if (typeof n === "number" && !Number.isNaN(n)) return n;
+      const n = coerceNum(arr[i]);
+      if (n != null) return n;
     }
     return null;
   }
-  return typeof v === "number" ? v : null;
+  return coerceNum(v);
 }
 
 export function str(v: unknown): string {
@@ -62,6 +79,21 @@ export function fmtBytes(v: number | null): string {
 
 export function num(v: number | null): string {
   return v == null ? "–" : String(Math.round(v));
+}
+
+/** Count → thousands with a trailing "K" (e.g. 18,631,754 → "18,632K"). */
+export function fmtThousands(v: number | null): string {
+  if (v == null) return "–";
+  return `${Math.round(v / 1000).toLocaleString("en-US")}K`;
+}
+
+/** Span duration (nanoseconds) → compact µs / ms / s string. */
+export function fmtDuration(ns: number | null): string {
+  if (ns == null) return "–";
+  if (ns < 1_000) return `${ns.toFixed(0)} ns`;
+  if (ns < 1_000_000) return `${(ns / 1_000).toFixed(1)} µs`;
+  if (ns < 1_000_000_000) return `${(ns / 1_000_000).toFixed(1)} ms`;
+  return `${(ns / 1_000_000_000).toFixed(2)} s`;
 }
 
 export function distinct(recs: Rec[], key: string): Set<string> {

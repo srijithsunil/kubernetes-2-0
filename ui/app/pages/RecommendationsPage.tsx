@@ -11,6 +11,7 @@ import * as Q from "../queries/k8s";
 import { records, str, lastNum, fmtCores, fmtBytes } from "../lib/series";
 import { explainEntity, type ExplainResult } from "../ai/explain";
 import { useFilters, pick } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 
 // Rightsizing thresholds.
 const CPU_OVERPROVISION_RATIO = 0.3; // usage < 30% of request → over-provisioned
@@ -104,6 +105,7 @@ const RecSection = ({
 
 export const RecommendationsPage = () => {
   const { filters } = useFilters();
+  useTimeframe();
   const oom = useDql({ query: Q.recOomRisk(pick(filters, ["namespace", "workload"])) });
   const rightsizing = useDql({ query: Q.recRightsizing(pick(filters, ["cluster", "namespace"])) });
 

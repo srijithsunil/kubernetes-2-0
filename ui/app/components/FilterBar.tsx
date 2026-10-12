@@ -6,19 +6,23 @@ import { Select } from "@dynatrace/strato-components/forms";
 import { Tooltip } from "@dynatrace/strato-components/overlays";
 import * as Q from "../queries/k8s";
 import { records, str } from "../lib/series";
-import { useFilters, type FilterKey } from "../lib/filters";
+import { useFilters, type FilterKey, type Filters } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 
-const META: Record<FilterKey, { label: string; field: string; query: () => string }> = {
-  cluster: { label: "Cluster", field: "k8s.cluster.uid", query: Q.filterClusters },
-  namespace: { label: "Namespace", field: "k8s.namespace.name", query: Q.filterNamespaces },
-  workload: { label: "Workload", field: "name", query: Q.filterWorkloads },
-  pod: { label: "Pod", field: "k8s.pod.name", query: Q.filterPods },
+// `query` takes the current filters so each dropdown's options cascade from the
+// selections above it (cluster → namespace → workload/pod).
+const META: Record<FilterKey, { label: string; field: string; query: (f: Filters) => string }> = {
+  cluster: { label: "Cluster", field: "k8s.cluster.uid", query: () => Q.filterClusters() },
+  namespace: { label: "Namespace", field: "k8s.namespace.name", query: (f) => Q.filterNamespaces(f) },
+  workload: { label: "Workload", field: "name", query: (f) => Q.filterWorkloads(f) },
+  pod: { label: "Pod", field: "k8s.pod.name", query: (f) => Q.filterPods(f) },
 };
 
 const FilterSelect = ({ fkey, disabledReason }: { fkey: FilterKey; disabledReason?: string }) => {
   const { filters, set } = useFilters();
+  useTimeframe(); // re-run option queries when the global timeframe changes
   const meta = META[fkey];
-  const { data } = useDql({ query: meta.query() });
+  const { data } = useDql({ query: meta.query(filters) });
   const options = records(data)
     .map((r) => str(r[meta.field]))
     .filter(Boolean);

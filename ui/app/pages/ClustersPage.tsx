@@ -11,6 +11,7 @@ import { FilterBar } from "../components/FilterBar";
 import { SummaryBar } from "../components/SummaryBar";
 import * as Q from "../queries/k8s";
 import { useFilters, pick } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 import {
   records,
   distinct,
@@ -47,11 +48,12 @@ type ClusterRow = {
   memLim: string;
 };
 
-const shortUid = (uid: string) => (uid ? uid.slice(0, 8) : "unknown");
+const shortUid = (uid: string) => (uid ? uid.slice(0, 8) : "Unknown cluster");
 
 export const ClustersPage = () => {
   const [sel, setSel] = useState<Selection | null>(null);
   const { filters } = useFilters();
+  useTimeframe();
   const f = pick(filters, ["cluster"]);
   const pods = useDql({ query: Q.clusterPods(f) });
   const nodes = useDql({ query: Q.clusterNodes() });

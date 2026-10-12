@@ -3,7 +3,7 @@
   "environmentUrl": "https://dzc57470.apps.dynatrace.com/",
   "app": {
     "name": "Kubernetes 2.0",
-    "version": "0.0.10",
+    "version": "0.0.13",
     "description": "A starting project with routing, fetching data, and charting",
     "id": "my.kubernetes.v2",
     "scopes": [

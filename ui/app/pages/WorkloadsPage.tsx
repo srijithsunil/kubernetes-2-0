@@ -11,6 +11,7 @@ import { SummaryBar, type SummaryStatus } from "../components/SummaryBar";
 import * as Q from "../queries/k8s";
 import { records, lastNum, str, fmtCores, fmtBytes, num, type Rec } from "../lib/series";
 import { useFilters, pick } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 
 type WorkloadKind = "Deployment" | "StatefulSet" | "DaemonSet";
 
@@ -43,6 +44,7 @@ const avail = (desired: number | null, available: number | null): string => {
 export const WorkloadsPage = () => {
   const [sel, setSel] = useState<Selection | null>(null);
   const { filters } = useFilters();
+  useTimeframe();
   const f = pick(filters, ["cluster", "namespace", "workload"]);
   const deps = useDql({ query: Q.deployments(f) });
   const sts = useDql({ query: Q.statefulsets(f) });

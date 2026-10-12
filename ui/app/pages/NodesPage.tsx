@@ -7,6 +7,7 @@ import { detailsColumn } from "../components/detailsColumn";
 import { FilterBar } from "../components/FilterBar";
 import * as Q from "../queries/k8s";
 import { records, lastNum, str, fmtCores, fmtBytes } from "../lib/series";
+import { useTimeframe } from "../lib/timeframe";
 
 type NodeRow = {
   id: string;
@@ -21,6 +22,7 @@ type NodeRow = {
 
 export const NodesPage = () => {
   const [sel, setSel] = useState<Selection | null>(null);
+  useTimeframe();
   const { data, error, isLoading } = useDql({ query: Q.nodes() });
 
   const rows = useMemo<NodeRow[]>(() => {

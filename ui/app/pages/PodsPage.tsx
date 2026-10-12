@@ -9,6 +9,7 @@ import { SummaryBar, type SummaryStatus } from "../components/SummaryBar";
 import * as Q from "../queries/k8s";
 import { records, lastNum, str, phaseLabel, fmtCores, fmtBytes } from "../lib/series";
 import { useFilters, pick } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 
 type PodRow = {
   id: string;
@@ -24,6 +25,7 @@ type PodRow = {
 export const PodsPage = () => {
   const [sel, setSel] = useState<Selection | null>(null);
   const { filters } = useFilters();
+  useTimeframe();
   const f = pick(filters, ["cluster", "namespace", "pod"]);
   const phase = useDql({ query: Q.podsPhase(f) });
   const usage = useDql({ query: Q.podsUsage(f) });

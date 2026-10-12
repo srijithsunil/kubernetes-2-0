@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { useDql } from "@dynatrace-sdk/react-hooks";
 import { openApp } from "@dynatrace-sdk/navigation";
-import { Sheet } from "@dynatrace/strato-components/overlays";
 import { Flex } from "@dynatrace/strato-components/layouts";
 import { Heading, Paragraph, Text } from "@dynatrace/strato-components/typography";
 import { DataTable, type DataTableColumnDef } from "@dynatrace/strato-components/tables";
 import { TimeseriesChart } from "@dynatrace/strato-components/charts";
 import { Button } from "@dynatrace/strato-components/buttons";
-import { AiResponse, Chip } from "@dynatrace/strato-components/content";
+import { Chip } from "@dynatrace/strato-components/content";
 import { Tabs, Tab } from "@dynatrace/strato-components/navigation";
-import { ArrowLeftIcon, XmarkIcon } from "@dynatrace/strato-icons";
+import { ArrowLeftIcon } from "@dynatrace/strato-icons";
 import * as Q from "../queries/k8s";
 import {
   records,
@@ -18,12 +17,16 @@ import {
   sumLast,
   fmtCores,
   fmtBytes,
+  fmtDuration,
+  fmtThousands,
   phaseLabel,
   deriveWorkload,
   toTimeseries,
   type ChartSeries,
 } from "../lib/series";
-import { explainEntity, type ExplainResult } from "../ai/explain";
+import { useAssist } from "../lib/assist";
+import { useTimeframe } from "../lib/timeframe";
+import { SidePanel } from "./SidePanel";
 import { SummaryBar, type SummaryStatus } from "./SummaryBar";
 
 // Built-in Dynatrace Problems app.
@@ -39,7 +42,8 @@ export type Selection =
       name: string;
     }
   | { type: "namespace"; namespace: string }
-  | { type: "cluster"; uid: string };
+  | { type: "cluster"; uid: string }
+  | { type: "service"; service: string };
 
 type Nav = (s: Selection) => void;
 
@@ -155,32 +159,15 @@ const WorkloadChip = ({ namespace, workload, nav }: { namespace: string; workloa
   );
 };
 
+/** Opens the shared Dynatrace Assist panel with this entity's context. */
 const AiExplain = ({ subject, context }: { subject: string; context: string }) => {
-  const [result, setResult] = useState<ExplainResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const run = () => {
-    setLoading(true);
-    setResult(null);
-    void explainEntity(`Explain the current state of ${subject}.`, context).then((r) => {
-      setResult(r);
-      setLoading(false);
-    });
-  };
+  const { open } = useAssist();
   return (
-    <Flex flexDirection="column" gap={8}>
-      <Flex alignItems="center" gap={8}>
-        <Button onClick={run} variant="accent" disabled={loading}>
-          {loading ? "Asking Dynatrace Intelligence…" : "Explain with AI · Dynatrace Intelligence"}
-        </Button>
-        <Text textStyle="small">AI-generated · verify before acting</Text>
-      </Flex>
-      {result && result.ok ? <AiResponse responseState="static">{result.text}</AiResponse> : null}
-      {result && !result.ok ? (
-        <Flex flexDirection="column" gap={2}>
-          <Paragraph>{result.message}</Paragraph>
-          {result.hint ? <Text textStyle="small">{result.hint}</Text> : null}
-        </Flex>
-      ) : null}
+    <Flex alignItems="center" gap={8}>
+      <Button onClick={() => open({ subject, context })} variant="accent">
+        Explain with AI · Dynatrace Assist
+      </Button>
+      <Text textStyle="small">Opens Dynatrace Assist · AI-generated, verify before acting</Text>
     </Flex>
   );
 };
@@ -358,7 +345,7 @@ const PodDetail = ({ namespace, pod, nav }: { namespace: string; pod: string; na
         <Flex gap={8} flexWrap="wrap">
           <RelChip label={`Namespace: ${namespace}`} onClick={() => nav({ type: "namespace", namespace })} />
           <RelChip
-            label={clusterUid ? `Cluster: ${clusterUid.slice(0, 8)}` : "Cluster"}
+            label={clusterUid ? `Cluster: ${clusterUid.slice(0, 8)}` : "Unknown cluster"}
             onClick={() => nav({ type: "cluster", uid: clusterUid })}
           />
           <WorkloadChip namespace={namespace} workload={workload} nav={nav} />
@@ -758,7 +745,7 @@ const NamespaceDetail = ({ namespace, nav }: { namespace: string; nav: Nav }) =>
         <Heading level={3}>Relationships</Heading>
         <Flex gap={8} flexWrap="wrap">
           <RelChip
-            label={clusterUid ? `Cluster: ${clusterUid.slice(0, 8)}` : "Cluster"}
+            label={clusterUid ? `Cluster: ${clusterUid.slice(0, 8)}` : "Unknown cluster"}
             onClick={() => nav({ type: "cluster", uid: clusterUid })}
           />
         </Flex>
@@ -912,6 +899,115 @@ const ClusterDetail = ({ nav }: { uid: string; nav: Nav }) => {
   );
 };
 
+type SvcLocRow = { id: string; namespace: string; pod: string; requests: number };
+
+/** Service detail — RED-ish metrics from spans plus the pods it runs on. */
+const ServiceDetail = ({ service, nav }: { service: string; nav: Nav }) => {
+  const stat = useDql({ query: Q.serviceStat(service) });
+  const failStat = useDql({ query: Q.serviceFailStat(service) });
+  const locs = useDql({ query: Q.serviceLocations(service) });
+
+  const s0 = records(stat.data)[0];
+  const requests = Math.round(lastNum(s0?.["requests"]) ?? 0);
+  const avgDur = lastNum(s0?.["avgDuration"]);
+  const failures = Math.round(lastNum(records(failStat.data)[0]?.["failures"]) ?? 0);
+  const errRate = requests > 0 ? (failures / requests) * 100 : 0;
+  const errStatus: SummaryStatus = errRate > 5 ? "critical" : errRate > 1 ? "warning" : "good";
+
+  const locRows: SvcLocRow[] = records(locs.data)
+    .map((r, i) => ({
+      id: String(i),
+      namespace: str(r["k8s.namespace.name"]),
+      pod: str(r["k8s.pod.name"]),
+      requests: Math.round(lastNum(r["requests"]) ?? 0),
+    }))
+    .filter((r) => r.pod);
+
+  const locCols: DataTableColumnDef<SvcLocRow>[] = [
+    { id: "namespace", header: "Namespace", accessor: "namespace" },
+    { id: "pod", header: "Pod", accessor: "pod" },
+    { id: "requests", header: "Requests", accessor: "requests" },
+  ];
+
+  const aiContext = [
+    `Service ${service}.`,
+    `Requests in the selected timeframe: ${requests}.`,
+    `Failed requests: ${failures} (${errRate.toFixed(1)}% error rate).`,
+    `Average span duration: ${fmtDuration(avgDur)}.`,
+    locRows.length
+      ? `Runs on pods: ${locRows.slice(0, 10).map((r) => `${r.namespace}/${r.pod}`).join(", ")}.`
+      : "No pod location data from spans.",
+  ].join(" ");
+
+  return (
+    <Flex flexDirection="column" gap={16}>
+      <AiExplain subject={`Kubernetes service ${service}`} context={aiContext} />
+
+      <SummaryBar
+        segments={[
+          { label: "Requests", value: fmtThousands(requests), status: "good" },
+          { label: "Failures", value: failures, status: failures > 0 ? errStatus : "good" },
+          { label: "Error rate", value: `${errRate.toFixed(1)}%`, status: errStatus },
+          { label: "Avg duration", value: fmtDuration(avgDur), status: "good" },
+        ]}
+      />
+
+      <Tabs>
+        <Tab title="Overview">
+          <Flex flexDirection="column" gap={16} paddingTop={8}>
+            <MetricChart
+              title="Requests over time"
+              query={Q.serviceRequestsSeries(service)}
+              specs={[{ field: "requests", name: "Requests" }]}
+            />
+            <MetricChart
+              title="Average span duration (ns)"
+              query={Q.serviceDurationSeries(service)}
+              specs={[{ field: "avgDuration", name: "Avg duration" }]}
+            />
+          </Flex>
+        </Tab>
+
+        <Tab title="Errors">
+          <Flex flexDirection="column" gap={16} paddingTop={8}>
+            <MetricChart
+              title="Failed requests over time"
+              query={Q.serviceFailuresSeries(service)}
+              specs={[{ field: "failures", name: "Failures" }]}
+            />
+            <Text textStyle="small">
+              Failures are spans where request.is_failed is true. If this stays flat at zero, the
+              span feed on this tenant may not populate that attribute.
+            </Text>
+          </Flex>
+        </Tab>
+
+        <Tab title="Locations">
+          <Flex flexDirection="column" gap={16} paddingTop={8}>
+            <Heading level={4}>Pods serving this service ({locRows.length})</Heading>
+            {!locs.isLoading && locRows.length === 0 ? (
+              <Paragraph>No pod/namespace dimensions on this service's spans in the selected timeframe.</Paragraph>
+            ) : (
+              <DataTable
+                data={locRows}
+                columns={locCols}
+                loading={locs.isLoading}
+                sortable
+                rowId={(r) => r.id}
+                interactiveRows={{ autoActivate: false }}
+                onActiveRowChange={(id) => {
+                  const row = id != null ? locRows.find((r) => r.id === id) : undefined;
+                  if (row) nav({ type: "pod", namespace: row.namespace, pod: row.pod });
+                }}
+              />
+            )}
+          </Flex>
+        </Tab>
+      </Tabs>
+    </Flex>
+  );
+};
+
 const titleFor = (s: Selection): string => {
   switch (s.type) {
     case "pod":
@@ -924,6 +1020,8 @@ const titleFor = (s: Selection): string => {
       return `Namespace · ${s.namespace}`;
     case "cluster":
       return "Cluster";
+    case "service":
+      return `Service · ${s.service}`;
   }
 };
 
@@ -939,6 +1037,8 @@ const renderDetail = (s: Selection, nav: Nav) => {
       return <NamespaceDetail namespace={s.namespace} nav={nav} />;
     case "cluster":
       return <ClusterDetail uid={s.uid} nav={nav} />;
+    case "service":
+      return <ServiceDetail service={s.service} nav={nav} />;
   }
 };
 
@@ -957,6 +1057,7 @@ export const DetailSheet = ({
   onNavigate?: (s: Selection) => void;
 }) => {
   const [stack, setStack] = useState<Selection[]>([]);
+  useTimeframe(); // re-render (and re-run detail queries) when the timeframe changes
 
   useEffect(() => {
     setStack(selection ? [selection] : []);
@@ -983,21 +1084,13 @@ export const DetailSheet = ({
     ""
   );
 
-  const actions = (
-    <Button aria-label="Close" onClick={onDismiss}>
-      <Button.Prefix>
-        <XmarkIcon />
-      </Button.Prefix>
-    </Button>
-  );
-
   return (
-    <Sheet show={selection != null} title={titleEl} actions={actions} onDismiss={onDismiss}>
+    <SidePanel show={selection != null} title={titleEl} onDismiss={onDismiss} width={860}>
       {current ? (
-        <Flex flexDirection="column" gap={16} padding={16}>
+        <Flex flexDirection="column" gap={16}>
           {renderDetail(current, nav)}
         </Flex>
       ) : null}
-    </Sheet>
+    </SidePanel>
   );
 };

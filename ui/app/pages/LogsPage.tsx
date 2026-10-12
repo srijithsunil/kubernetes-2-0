@@ -10,6 +10,7 @@ import { FilterBar } from "../components/FilterBar";
 import * as Q from "../queries/k8s";
 import { records, str } from "../lib/series";
 import { useFilters, pick } from "../lib/filters";
+import { useTimeframe } from "../lib/timeframe";
 
 type LogRow = {
   id: string;
@@ -23,6 +24,7 @@ type LogRow = {
 
 export const LogsPage = () => {
   const { filters } = useFilters();
+  useTimeframe();
   const f = pick(filters, ["cluster", "namespace", "pod"]);
 
   const [status, setStatus] = useState<string | undefined>(undefined);
