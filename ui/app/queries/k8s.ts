@@ -35,12 +35,15 @@ function spanConds(f: Filters): string {
 }
 
 // ---- Logs (top-level view) ------------------------------------------------
-// Global k8s pod logs, filtered by cluster / namespace / pod from the filter bar,
-// plus a status (loglevel) dropdown and free-text content search.
-export const logsList = (
-  f: Filters = {},
-  opts: { status?: string; search?: string } = {}
-) => {
+type LogOpts = { status?: string; search?: string };
+
+// Columns surfaced for the Logs view, in both the in-app table and the native
+// Logs app drill-down, so the hand-off keeps the same OTel fields.
+const LOG_FIELDS =
+  "timestamp, loglevel, k8s.namespace.name, k8s.pod.name, k8s.container.name, trace_id, span_id, content";
+
+// Shared filter conditions for the logs table and its drill-downs.
+function logFilterParts(f: Filters, opts: LogOpts): string[] {
   const parts: string[] = ["isNotNull(k8s.pod.name)"];
   if (f.cluster) parts.push(`k8s.cluster.uid=="${f.cluster}"`);
   if (f.namespace) parts.push(`k8s.namespace.name=="${f.namespace}"`);
@@ -50,8 +53,22 @@ export const logsList = (
     const s = opts.search.trim().toLowerCase().replace(/"/g, '\\"');
     parts.push(`contains(lower(content), "${s}")`);
   }
-  return `fetch logs, ${win()} | filter ${parts.join(" and ")} | fields timestamp, loglevel, k8s.namespace.name, k8s.pod.name, k8s.container.name, content | sort timestamp desc | limit 500`;
-};
+  return parts;
+}
+
+// Global k8s pod logs for the in-app table (trace_id/span_id null when absent —
+// logs are schemaless, so referencing a missing field is safe).
+export const logsList = (f: Filters = {}, opts: LogOpts = {}) =>
+  `fetch logs, ${win()} | filter ${logFilterParts(f, opts).join(" and ")} | fields ${LOG_FIELDS} | sort timestamp desc | limit 500`;
+
+// Same query, handed to the native Logs app via a dt.query intent so it opens
+// pre-loaded with the current filters and the OTel columns above.
+export const logsDrillQuery = (f: Filters = {}, opts: LogOpts = {}) =>
+  `fetch logs, ${win()} | filter ${logFilterParts(f, opts).join(" and ")} | fields ${LOG_FIELDS} | sort timestamp desc`;
+
+// A single record's surrounding context (that pod's logs), for the row drill-down.
+export const logsDrillForRecord = (ns: string, pod: string) =>
+  `fetch logs, ${win()} | filter k8s.namespace.name=="${ns}" and k8s.pod.name=="${pod}" | fields ${LOG_FIELDS} | sort timestamp desc`;
 
 // Distinct log levels (status dropdown options).
 export const logLevels = () =>
